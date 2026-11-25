@@ -1,0 +1,112 @@
+name: Release
+
+# Builds signed release APKs + AAB and publishes them as a GitHub Release.
+#  * Push a tag like v1.0.0      → creates release "v1.0.0"
+#  * Or run manually (Actions → Release → Run workflow) → pre-release on the chosen branch
+#
+# Signing: add repository secrets ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+# ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD. Without them the build is signed with
+# the debug key (fine for testing, NOT for the Play Store) and the release notes say so.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version name (e.g. 1.0.1). Defaults to pubspec version."
+        required: false
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: "3.50.1"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Install Android platform 37
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" > /dev/null
+
+      - name: Resolve version
+        id: ver
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then V="${GITHUB_REF_NAME#v}";
+          elif [[ -n "$INPUT_VERSION" ]]; then V="$INPUT_VERSION";
+          else V="$(grep '^version:' pubspec.yaml | sed -E 's/version: *([^+]*).*/\1/')"; fi
+          if ! [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "Invalid version: $V"; exit 1; fi
+          echo "name=$V" >> "$GITHUB_OUTPUT"
+          echo "code=$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Configure release signing
+        id: sign
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PW: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [[ -n "$KEYSTORE_B64" ]]; then
+            echo "$KEYSTORE_B64" | base64 -d > android/app/release.jks
+            printf "storeFile=release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n" "$STORE_PW" "$KEY_ALIAS" "$KEY_PW" > android/key.properties
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No signing secrets set — building with the DEBUG key."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - run: flutter pub get
+      - run: flutter test
+      - name: Build universal + per-ABI APKs and AAB
+        run: |
+          ARGS="--build-name=${{ steps.ver.outputs.name }} --build-number=${{ steps.ver.outputs.code }}"
+          flutter build apk --release $ARGS
+          cp build/app/outputs/flutter-apk/app-release.apk "$RUNNER_TEMP/banknote-assistant-${{ steps.ver.outputs.name }}-universal.apk"
+          flutter build apk --release --split-per-abi $ARGS
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            cp "build/app/outputs/flutter-apk/app-$abi-release.apk" "$RUNNER_TEMP/banknote-assistant-${{ steps.ver.outputs.name }}-$abi.apk"
+          done
+          flutter build appbundle --release $ARGS || test -f build/app/outputs/bundle/release/app-release.aab
+          cp build/app/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/banknote-assistant-${{ steps.ver.outputs.name }}.aab"
+          (cd "$RUNNER_TEMP" && sha256sum banknote-assistant-* > SHA256SUMS.txt)
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f android/app/release.jks android/key.properties
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}-build.{1}', steps.ver.outputs.name, github.run_number) }}
+          name: Banknote Assistant ${{ steps.ver.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          prerelease: ${{ github.ref_type != 'tag' }}
+          body: |
+            **Banknote Assistant ${{ steps.ver.outputs.name }}**
+
+            Which file to install: most phones → `arm64-v8a`; if unsure → `universal`.
+            The `.aab` is for Google Play.
+
+            ${{ steps.sign.outputs.signed == 'true' && 'Signed with the release key.' || '⚠️ Signed with the DEBUG key — for testing only, not for the Play Store.' }}
+
+            ⚠️ No trained recognition model is bundled: the app reports "recognition model not installed"
+            until one is installed (see machine_learning/README.md). Demo mode is scripted and labelled.
+          files: |
+            ${{ runner.temp }}/banknote-assistant-*
+            ${{ runner.temp }}/SHA256SUMS.txt

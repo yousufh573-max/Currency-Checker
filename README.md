@@ -27,7 +27,7 @@ banknote-assistant/
 ├── machine_learning/  dataset tools, training, evaluation, export (PyTorch → ONNX / TFLite)
 ├── design/            App design.pdf (UI reference)
 ├── docs/              API reference, development report
-└── .github/workflows/ CI: tests + debug/release APK + AAB
+└── .github/workflows/ ci.yml (tests + debug APK on every push), release.yml (signed APKs/AAB → GitHub Release)
 ```
 
 ### The seven screens (from `design/App design.pdf`)
@@ -52,8 +52,8 @@ Exit/প্রস্থান, Confirm/হ্যাঁ, Cancel/বাতিল. 
 
 ### A. Install the app on a phone (no coding)
 
-1. Get `app-release.apk` (from `mobile/build/app/outputs/flutter-apk/` after building,
-   or from the GitHub Actions run artifacts).
+1. Download an APK from the repository's **Releases** page (`arm64-v8a` fits most
+   phones; `universal` works everywhere), or build it yourself (section B).
 2. Copy it to the phone, open it, allow "install unknown apps" when asked.
 3. Open **Banknote Assistant**, allow microphone and camera.
 4. Until a model is installed, scanning will say the model is missing. To try the
@@ -153,6 +153,17 @@ amounts. No backup/cloud transfer of app data. Release builds block cleartext HT
 server validates uploads by magic bytes and size, decodes in memory, stores only numbers,
 rate-limits in production, and refuses `DEMO_MODE` in production. No API keys are embedded
 in the app.
+
+## GitHub Actions
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `ci.yml` | every push, pull requests, manual | backend + ML tooling tests, `flutter analyze`, `flutter test`, debug APK artifact |
+| `release.yml` | tag `v*` (e.g. `git tag v1.0.0 && git push origin v1.0.0`) or manual run | tests, universal + per-ABI release APKs, AAB, SHA-256 sums → GitHub Release |
+
+Release signing secrets (Settings → Secrets and variables → Actions):
+`ANDROID_KEYSTORE_BASE64` (`base64 -w0 release.jks`), `ANDROID_KEYSTORE_PASSWORD`,
+`ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. Without them, release builds use the debug key.
 
 ## Tests
 
