@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Speaker in a blue ring, matching the welcome screen of App design.pdf -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:strokeColor="#3A4BCB" android:strokeWidth="2.2"
+        android:pathData="M54,25a29,29 0 1,0 0.01,0z" />
+    <path android:fillColor="#8E9BA6" android:pathData="M37,46h7v16h-7a2,2 0 0,1 -2,-2v-12a2,2 0 0,1 2,-2z" />
+    <path android:fillColor="#CFD8DF" android:pathData="M44,46l12,-10a1.5,1.5 0 0,1 2.5,1.2v33.6a1.5,1.5 0 0,1 -2.5,1.2l-12,-10z" />
+    <path android:strokeColor="#8E9BA6" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:pathData="M63,47a9,9 0 0,1 0,14" />
+    <path android:strokeColor="#8E9BA6" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:pathData="M67,43a15,15 0 0,1 0,22" />
+    <path android:strokeColor="#8E9BA6" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:pathData="M71,39a21,21 0 0,1 0,30" />
+</vector>

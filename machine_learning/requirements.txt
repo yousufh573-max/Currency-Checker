@@ -1,0 +1,9 @@
+# Training / evaluation / export (not needed to run the backend or the app)
+torch==2.5.1
+torchvision==0.20.1
+opencv-python-headless==4.10.0.84
+numpy==2.2.1
+onnx==1.17.0
+matplotlib==3.9.4
+# TFLite export (optional; Linux/macOS recommended)
+ai-edge-torch==0.2.1

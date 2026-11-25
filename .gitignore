@@ -1,0 +1,35 @@
+# Secrets — never commit
+.env
+**/.env
+key.properties
+**/*.jks
+**/*.keystore
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+backend/data/
+
+# ML artefacts and datasets (large / licensed separately)
+machine_learning/datasets/*/
+!machine_learning/datasets/README.md
+machine_learning/weights/*
+!machine_learning/weights/.gitkeep
+machine_learning/evaluation/report/
+
+# Flutter / Android
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins*
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/app/.cxx/
+mobile/assets/models/*.tflite
+
+# Logs
+*.log
+.DS_Store
+.idea/
+dist/
