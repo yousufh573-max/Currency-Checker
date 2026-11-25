@@ -33,3 +33,6 @@ mobile/assets/models/*.tflite
 .DS_Store
 .idea/
 dist/
+
+# Play Store bundle (binary, rebuild locally)
+play_store/*.aab
