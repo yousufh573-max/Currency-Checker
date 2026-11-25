@@ -7,6 +7,7 @@ import '../core/theme.dart';
 import '../providers/providers.dart';
 import '../services/voice/command_parser.dart';
 import '../widgets/common.dart';
+import '../widgets/ui_kit.dart';
 import 'scanner_screen.dart';
 import 'voice_screen.dart';
 
@@ -95,10 +96,10 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> with VoiceScreen 
     final str = ref.watch(stringsProvider);
     final session = ref.watch(sessionProvider);
     final t = Theme.of(context).textTheme;
-    final summaryStyle = TextStyle(fontFamily: AppFonts.body, fontFamilyFallback: AppFonts.fallback, color: AppColors.summaryText, fontSize: 24, height: 1.2);
+    final summaryStyle = TextStyle(fontFamily: AppFonts.body, fontFamilyFallback: AppFonts.fallback, color: AppColors.summaryText, fontSize: 23, height: 1.2);
 
     return Scaffold(
-      body: SafeArea(
+      body: AppBackground(child: SafeArea(
         child: LayoutBuilder(builder: (context, c) {
           final w = c.maxWidth;
           return Column(children: [
@@ -115,7 +116,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> with VoiceScreen 
                     label: '${str.summary}. ${str.totalScannedLine(session.total)}. ${str.neededLine(session.requiredAmount)}. ${str.remainingLine(session.payment)}.',
                     excludeSemantics: true,
                     child: Container(
-                      width: w * 0.74,
+                      width: w * 0.88,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(22),
                         boxShadow: const [BoxShadow(color: Colors.black, offset: Offset(14, 16))],
@@ -126,7 +127,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> with VoiceScreen 
                           decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 6), borderRadius: BorderRadius.circular(22)),
                           child: IntrinsicHeight(
                             child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                              Container(width: w * 0.12, color: AppColors.summaryBlue),
+                              Container(width: w * 0.08, color: AppColors.summaryBlue),
                               Container(width: 5, color: Colors.black),
                               Expanded(
                                 child: Container(
@@ -162,6 +163,33 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> with VoiceScreen 
                     ),
                   ),
                   const SizedBox(height: 18),
+                  if (session.denominationCounts.isNotEmpty) ...[
+                    Semantics(header: true, child: Text(str.breakdown, style: t.titleLarge)),
+                    const SizedBox(height: 8),
+                    // Per-denomination breakdown: "৳20 × 1".
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        for (final e in (session.denominationCounts.entries.toList()..sort((a, b) => b.key.compareTo(a.key))))
+                          Semantics(
+                            label: '${e.value} × ${str.takaWord(e.key)}',
+                            excludeSemantics: true,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: const Color(0x1AFFFFFF),
+                                borderRadius: BorderRadius.circular(22),
+                                border: Border.all(color: AppColors.successGreen.withValues(alpha: 0.7), width: 1.5),
+                              ),
+                              child: Text('${taka(e.key)}  ×  ${e.value}', style: t.bodyLarge),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   Text(str.cashOnlyDisclaimer, textAlign: TextAlign.center, style: t.bodyMedium!.copyWith(color: AppColors.glassBorder)),
                   const SizedBox(height: 18),
                   _ActionPanel(
@@ -188,7 +216,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> with VoiceScreen 
             ),
           ]);
         }),
-      ),
+      )),
     );
   }
 }

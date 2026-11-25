@@ -10,6 +10,7 @@ import '../services/voice/amount_parser.dart';
 import '../services/voice/command_parser.dart';
 import '../widgets/common.dart';
 import '../widgets/mic_button.dart';
+import '../widgets/ui_kit.dart';
 import '../widgets/waveform.dart';
 import 'voice_screen.dart';
 
@@ -104,72 +105,94 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> with VoiceScreen 
     final resultColor = p == null ? AppColors.brightBlue : (p.sufficient ? AppColors.brightBlue : AppColors.warningRed);
 
     return Scaffold(
-      body: SafeArea(
-        child: LayoutBuilder(builder: (context, c) {
-          final w = c.maxWidth;
-          return SingleChildScrollView(
-            padding: EdgeInsets.symmetric(horizontal: w * 0.05, vertical: 16),
-            child: Column(children: [
-              SpeakerBanner(text: str.howMuch, color: AppColors.successBorder, onTap: () => say(str.howMuchSpeech)),
-              const SizedBox(height: 18),
-              MicButton(listening: voice.listening, size: w * 0.26, label: str.listening, onPressed: () {
-                haptic(HapticKind.tap);
-                startListening();
-              }),
-              const SizedBox(height: 12),
-              ValueListenableBuilder<bool>(
-                valueListenable: voice.listening,
-                builder: (_, listening, _) => Column(children: [
-                  Waveform(level: voice.soundLevel, active: listening, bars: 18, width: w * 0.36, height: 60, style: WaveStyle.sparse),
-                  Semantics(liveRegion: true, child: Text(listening ? str.listening : str.notListening, style: t.headlineMedium!.copyWith(fontSize: w * 0.075))),
-                ]),
-              ),
-              Text(str.exampleAmount, style: t.headlineMedium!.copyWith(fontSize: w * 0.065)),
-              const SizedBox(height: 14),
-              _AmountCard(label: str.totalScannedAmount, amount: session.total, seed: 3, width: w),
-              const SizedBox(height: 10),
-              Semantics(
-                button: true,
-                hint: str.enterAmount,
-                child: GestureDetector(
-                  onTap: _manualEntry,
-                  child: _AmountCard(label: str.requiredPaymentAmount, amount: session.requiredAmount, placeholder: str.notSetYet, seed: 7, width: w),
+      body: AppBackground(
+        child: SafeArea(
+          child: LayoutBuilder(builder: (context, c) {
+            final w = c.maxWidth;
+            return SingleChildScrollView(
+              padding: EdgeInsets.symmetric(horizontal: w * 0.05, vertical: 16),
+              child: Column(children: [
+                SpeakerBanner(text: str.howMuch, color: AppColors.successBorder, onTap: () => say(str.howMuchSpeech)),
+                const SizedBox(height: 18),
+                MicButton(listening: voice.listening, size: w * 0.26, label: str.listening, onPressed: () {
+                  haptic(HapticKind.tap);
+                  startListening();
+                }),
+                const SizedBox(height: 12),
+                ValueListenableBuilder<bool>(
+                  valueListenable: voice.listening,
+                  builder: (_, listening, _) => Column(children: [
+                    Waveform(level: voice.soundLevel, active: listening, bars: 18, width: w * 0.36, height: 56, style: WaveStyle.sparse),
+                    Semantics(liveRegion: true, child: Text(listening ? str.listening : str.notListening, style: t.headlineMedium!.copyWith(fontSize: w * 0.075))),
+                  ]),
                 ),
-              ),
-              const SizedBox(height: 12),
-              if (_resultText != null)
-                SpeakerBanner(text: _resultText!, color: resultColor, onTap: () => p != null ? say(str.paymentSpeech(p)) : null),
-              const SizedBox(height: 14),
-              Row(children: [
-                Expanded(
-                  child: SketchyBorder(
-                    color: AppColors.brightBlue,
-                    seed: 11,
-                    child: Semantics(
-                      button: true,
-                      label: str.scanMoreNotes,
-                      excludeSemantics: true,
-                      child: InkWell(
-                        onTap: _scanMore,
-                        child: Container(
-                          constraints: const BoxConstraints(minHeight: 72),
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                            const Icon(Icons.document_scanner_outlined, size: 34),
-                            const SizedBox(width: 10),
-                            Flexible(child: Text(str.scanMoreNotes, style: t.bodyLarge)),
-                          ]),
-                        ),
+                Text(str.exampleAmount, style: t.headlineMedium!.copyWith(fontSize: w * 0.06)),
+                const SizedBox(height: 14),
+                _AmountCard(label: str.totalScannedAmount, amount: session.total, seed: 3, width: w),
+                const SizedBox(height: 10),
+                Semantics(
+                  button: true,
+                  hint: str.enterAmount,
+                  child: GestureDetector(
+                    onTap: _manualEntry,
+                    child: _AmountCard(label: str.requiredPaymentAmount, amount: session.requiredAmount, placeholder: str.notSetYet, seed: 7, width: w),
+                  ),
+                ),
+                // Visual comparison: what you have vs what you need.
+                if (p != null && p.required > 0) ...[
+                  const SizedBox(height: 14),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Column(children: [
+                      Row(children: [
+                        Expanded(child: Text('${str.youHave} ${taka(p.total)}', style: t.bodyMedium)),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text('${str.youNeed} ${taka(p.required)}', textAlign: TextAlign.end, style: t.bodyMedium)),
+                      ]),
+                      const SizedBox(height: 4),
+                      MeterBar(
+                        value: p.total / p.required,
+                        color: p.sufficient ? AppColors.successGreen : AppColors.warningRed,
+                        height: 14,
+                      ),
+                    ]),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                if (_resultText != null)
+                  SpeakerBanner(text: _resultText!, color: resultColor, onTap: () => p != null ? say(str.paymentSpeech(p)) : null),
+                const SizedBox(height: 14),
+                SketchyBorder(
+                  color: AppColors.brightBlue,
+                  seed: 11,
+                  child: Semantics(
+                    button: true,
+                    label: str.scanMoreNotes,
+                    excludeSemantics: true,
+                    child: InkWell(
+                      onTap: _scanMore,
+                      child: Container(
+                        constraints: const BoxConstraints(minHeight: 72),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          const Icon(Icons.document_scanner_outlined, size: 34),
+                          const SizedBox(width: 10),
+                          Flexible(child: Text(str.scanMoreNotes, style: t.bodyLarge)),
+                        ]),
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(child: BigActionButton(label: str.seeSummary, icon: Icons.summarize_outlined, onPressed: _toSummary, color: AppColors.successGreen)),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(child: BigActionButton(label: str.typeAmount, icon: Icons.dialpad_rounded, onPressed: _manualEntry, hint: str.enterAmount)),
+                  const SizedBox(width: 10),
+                  Expanded(child: BigActionButton(label: str.seeSummary, icon: Icons.summarize_outlined, onPressed: _toSummary, color: AppColors.successGreen)),
+                ]),
               ]),
-            ]),
-          );
-        }),
+            );
+          }),
+        ),
       ),
     );
   }

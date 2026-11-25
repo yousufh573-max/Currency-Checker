@@ -7,6 +7,7 @@ import '../core/theme.dart';
 import '../providers/providers.dart';
 import '../services/voice/command_parser.dart';
 import '../widgets/glass_panel.dart';
+import '../widgets/ui_kit.dart';
 import '../widgets/waveform.dart';
 import 'voice_screen.dart';
 
@@ -78,7 +79,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> with VoiceScreen 
     final str = ref.watch(stringsProvider);
     final t = Theme.of(context).textTheme;
     return Scaffold(
-      body: SafeArea(
+      body: AppBackground(child: SafeArea(
         child: LayoutBuilder(builder: (context, c) {
           final w = c.maxWidth;
           return Stack(children: [
@@ -107,6 +108,11 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> with VoiceScreen 
                   ),
                   const SizedBox(height: 14),
                   Text(str.tagline, textAlign: TextAlign.center, style: t.bodyLarge),
+                  const SizedBox(height: 12),
+                  Consumer(builder: (context, ref, _) {
+                    final mode = ref.watch(settingsProvider.select((x) => x.mode));
+                    return ModeBadge(mode: mode, label: str.modeLabel(mode.name));
+                  }),
                   const SizedBox(height: 28),
                   // Glass listening panel with live status + waveform.
                   ValueListenableBuilder<bool>(
@@ -167,7 +173,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> with VoiceScreen 
             ),
           ]);
         }),
-      ),
+      )),
     );
   }
 }

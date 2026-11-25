@@ -193,6 +193,23 @@ class S {
       _t('Sorry, I did not catch the amount. Please say it again, for example 70 Taka.', 'দুঃখিত, পরিমাণ বোঝা যায়নি। আবার বলুন, যেমন সত্তর টাকা।');
   String get amountFirst => _t('Please say the amount you need to pay first.', 'প্রথমে কত টাকা দিতে হবে তা বলুন।');
 
+  // -------------------------------------------------------------- ui extras
+  String get totalLabel => _t('Total', 'মোট');
+  String get notesLabel => _t('notes counted', 'টি নোট গণনা হয়েছে');
+  String get notesShort => _t('notes', 'টি নোট');
+  String modeLabel(String mode) => switch (mode) {
+        'onDevice' => _t('Offline mode', 'অফলাইন মোড'),
+        'server' => _t('Server mode', 'সার্ভার মোড'),
+        _ => _t('Demo mode', 'ডেমো মোড'),
+      };
+  String get typeAmount => _t('Type amount', 'পরিমাণ লিখুন');
+  String get youHave => _t('You have', 'আপনার আছে');
+  String get youNeed => _t('You need', 'প্রয়োজন');
+  String get breakdown => _t('Notes counted', 'গণনা করা নোট');
+  String get confidenceShort => _t('Confidence', 'নিশ্চয়তা');
+  String get tornShort => _t('Missing area', 'হারানো অংশ');
+  String get scanSteady => _t('Steadiness', 'স্থিরতা');
+
   // ---------------------------------------------------------------- summary
   String get summary => _t('Summary', 'সারসংক্ষেপ');
   String totalScannedLine(int t) => _t('Total scanned : $t Taka', 'মোট স্ক্যান : $t টাকা');

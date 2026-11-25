@@ -8,6 +8,7 @@ import '../models/session.dart';
 import '../providers/providers.dart';
 import '../services/recognition/recognition_engine.dart';
 import '../services/recognition/server_engine.dart';
+import '../widgets/ui_kit.dart';
 
 final engineStatusProvider = FutureProvider.autoDispose<EngineStatus>((ref) => ref.watch(engineProvider).status());
 final historyProvider = FutureProvider.autoDispose<List<SessionState>>((ref) async => await ref.watch(sessionRepoProvider)?.history() ?? const []);
@@ -83,117 +84,171 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final status = ref.watch(engineStatusProvider);
     final history = ref.watch(historyProvider);
     final t = Theme.of(context).textTheme;
+    const tileText = TextStyle(fontSize: 20);
 
     return Scaffold(
-      appBar: AppBar(title: Text(str.settings, style: t.titleLarge), backgroundColor: AppColors.navy),
-      body: ListView(padding: const EdgeInsets.all(20), children: [
-        Text('Language / ভাষা', style: t.titleLarge),
-        SegmentedButton<AppLanguage>(
-          segments: const [ButtonSegment(value: AppLanguage.en, label: Text('English')), ButtonSegment(value: AppLanguage.bn, label: Text('বাংলা'))],
-          selected: {st.language},
-          onSelectionChanged: (v) => _update((s) => s.copyWith(language: v.first)),
-        ),
-        const SizedBox(height: 20),
-        Text('Speech rate: ${(st.speechRate * 200).round()}%', style: t.titleLarge),
-        Slider(
-          value: st.speechRate,
-          min: 0.2,
-          max: 0.8,
-          divisions: 12,
-          label: '${(st.speechRate * 200).round()}%',
-          semanticFormatterCallback: (v) => 'Speech rate ${(v * 200).round()} percent',
-          onChanged: (v) => _update((s) => s.copyWith(speechRate: v)),
-        ),
-        SwitchListTile(
-          title: const Text('Prefer offline speech recognition', style: TextStyle(fontSize: 20)),
-          subtitle: const Text('Uses the on-device recogniser when your phone supports it.'),
-          value: st.preferOfflineSpeech,
-          onChanged: (v) => _update((s) => s.copyWith(preferOfflineSpeech: v)),
-        ),
-        SwitchListTile(
-          title: const Text('Vibration feedback', style: TextStyle(fontSize: 20)),
-          value: st.haptics,
-          onChanged: (v) => _update((s) => s.copyWith(haptics: v)),
-        ),
-        SwitchListTile(
-          title: const Text('Automatic capture', style: TextStyle(fontSize: 20)),
-          subtitle: const Text('Capture automatically when the note is steady inside the frame.'),
-          value: st.autoCapture,
-          onChanged: (v) => _update((s) => s.copyWith(autoCapture: v)),
-        ),
-        const Divider(height: 32),
-        Text('Recognition', style: t.titleLarge),
-        RadioGroup<EngineMode>(
-          groupValue: st.mode,
-          onChanged: (m) => m == null ? null : _selectMode(m),
-          child: const Column(children: [
-            RadioListTile(value: EngineMode.onDevice, title: Text('On this phone (offline)', style: TextStyle(fontSize: 20)), subtitle: Text('Photos never leave the device.')),
-            RadioListTile(value: EngineMode.server, title: Text('Server', style: TextStyle(fontSize: 20)), subtitle: Text('Uploads photos to your FastAPI server (requires consent).')),
-            RadioListTile(value: EngineMode.demo, title: Text('Developer demo (NOT real recognition)', style: TextStyle(fontSize: 20, color: AppColors.amber))),
-          ]),
-        ),
-        if (st.mode == EngineMode.server) ...[
-          TextField(
-            controller: _url,
-            keyboardType: TextInputType.url,
-            decoration: InputDecoration(labelText: 'Server URL (https://…)', errorText: _urlError),
-            onSubmitted: (v) {
-              final err = validateServerUrl(v);
-              setState(() => _urlError = err == null ? null : (err == 'https_required' ? 'HTTPS is required' : 'Invalid URL'));
-              if (err == null) _update((s) => s.copyWith(serverUrl: v.trim()));
-            },
-          ),
-          SwitchListTile(
-            title: const Text('Consent to upload photos for analysis', style: TextStyle(fontSize: 18)),
-            value: st.serverConsent,
-            onChanged: (v) => _update((s) => s.copyWith(serverConsent: v)),
-          ),
-        ],
-        const SizedBox(height: 12),
-        Semantics(
-          liveRegion: true,
-          child: status.when(
-            data: (e) => ListTile(
-              leading: Icon(e.ready ? Icons.check_circle : Icons.error_outline, color: e.ready ? (e.isDemo ? AppColors.amber : AppColors.successGreen) : AppColors.warningRed, size: 36),
-              title: Text(e.ready ? 'Recognition ready${e.modelVersion != null ? ' (model ${e.modelVersion})' : ''}' : 'Recognition NOT available'),
-              subtitle: Text(e.message),
-            ),
-            loading: () => const ListTile(title: Text('Checking recognition engine…')),
-            error: (e, _) => ListTile(title: Text('Status check failed: $e')),
-          ),
-        ),
-        const Divider(height: 32),
-        Text('Saved sessions', style: t.titleLarge),
-        history.when(
-          data: (list) => list.isEmpty
-              ? const Padding(padding: EdgeInsets.all(8), child: Text('No completed sessions yet.'))
-              : Column(children: [
-                  for (final h in list)
-                    ListTile(
-                      title: Text('${str.totalScannedLine(h.total)}${h.hasDemoScans ? '  [DEMO]' : ''}'),
-                      subtitle: Text('${str.neededLine(h.requiredAmount)} · ${str.remainingLine(h.payment)}'),
-                      trailing: IconButton(
-                        tooltip: 'Delete session',
-                        icon: const Icon(Icons.delete_outline),
-                        onPressed: () async {
-                          await ref.read(sessionRepoProvider)?.delete(h.id);
-                          ref.invalidate(historyProvider);
-                        },
-                      ),
+      backgroundColor: AppColors.navy,
+      appBar: AppBar(
+        title: Text(str.settings, style: t.titleLarge),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
+      body: AppBackground(
+        child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
+          // Recognition status first: the most important thing to know.
+          Semantics(
+            liveRegion: true,
+            child: status.when(
+              data: (e) {
+                final color = e.ready ? (e.isDemo ? AppColors.amber : AppColors.successGreen) : AppColors.warningRed;
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: color, width: 2),
+                  ),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Icon(e.ready ? Icons.check_circle : Icons.error_outline, color: color, size: 36),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(e.ready ? 'Recognition ready${e.modelVersion != null ? ' (model ${e.modelVersion})' : ''}' : 'Recognition NOT available',
+                            style: t.bodyLarge!.copyWith(fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 4),
+                        Text(e.message, style: t.bodyMedium),
+                      ]),
                     ),
-                ]),
-          loading: () => const SizedBox.shrink(),
-          error: (_, _) => const SizedBox.shrink(),
-        ),
-        const SizedBox(height: 20),
-        Text(
-          'Banknote Assistant counts cash only. It does not detect counterfeit notes, verify authenticity, '
-          'or process payments. Torn-ratio thresholds (Good ≤5%, Damaged ≤20%, Too torn >20%) are app settings, '
-          'not Bangladesh Bank rules.',
-          style: t.bodyMedium!.copyWith(color: AppColors.glassBorder),
-        ),
-      ]),
+                  ]),
+                );
+              },
+              loading: () => const Padding(padding: EdgeInsets.all(16), child: Text('Checking recognition engine…')),
+              error: (e, _) => Text('Status check failed: $e'),
+            ),
+          ),
+          SectionCard(title: 'Voice  ·  কণ্ঠ', icon: Icons.record_voice_over_outlined, children: [
+            const SizedBox(height: 4),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<AppLanguage>(
+                segments: const [
+                  ButtonSegment(value: AppLanguage.en, label: Text('English', style: tileText)),
+                  ButtonSegment(value: AppLanguage.bn, label: Text('বাংলা', style: tileText)),
+                ],
+                selected: {st.language},
+                onSelectionChanged: (v) => _update((s) => s.copyWith(language: v.first)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text('Speech rate: ${(st.speechRate * 200).round()}%', style: tileText),
+            Slider(
+              value: st.speechRate,
+              min: 0.2,
+              max: 0.8,
+              divisions: 12,
+              label: '${(st.speechRate * 200).round()}%',
+              semanticFormatterCallback: (v) => 'Speech rate ${(v * 200).round()} percent',
+              onChanged: (v) => _update((s) => s.copyWith(speechRate: v)),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Prefer offline speech recognition', style: tileText),
+              subtitle: const Text('Uses the on-device recogniser when your phone supports it.'),
+              value: st.preferOfflineSpeech,
+              onChanged: (v) => _update((s) => s.copyWith(preferOfflineSpeech: v)),
+            ),
+          ]),
+          SectionCard(title: 'Scanning', icon: Icons.document_scanner_outlined, children: [
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Automatic capture', style: tileText),
+              subtitle: const Text('Capture automatically when the note is steady inside the frame.'),
+              value: st.autoCapture,
+              onChanged: (v) => _update((s) => s.copyWith(autoCapture: v)),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Vibration feedback', style: tileText),
+              value: st.haptics,
+              onChanged: (v) => _update((s) => s.copyWith(haptics: v)),
+            ),
+          ]),
+          SectionCard(title: 'Recognition', icon: Icons.memory_rounded, children: [
+            RadioGroup<EngineMode>(
+              groupValue: st.mode,
+              onChanged: (m) => m == null ? null : _selectMode(m),
+              child: const Column(children: [
+                RadioListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: EngineMode.onDevice,
+                    title: Text('On this phone (offline)', style: tileText),
+                    subtitle: Text('Photos never leave the device.')),
+                RadioListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: EngineMode.server,
+                    title: Text('Server', style: tileText),
+                    subtitle: Text('Uploads photos to your FastAPI server (requires consent).')),
+                RadioListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: EngineMode.demo,
+                    title: Text('Developer demo (NOT real recognition)', style: TextStyle(fontSize: 20, color: AppColors.amber))),
+              ]),
+            ),
+            if (st.mode == EngineMode.server) ...[
+              TextField(
+                controller: _url,
+                keyboardType: TextInputType.url,
+                decoration: InputDecoration(labelText: 'Server URL (https://…)', errorText: _urlError),
+                onSubmitted: (v) {
+                  final err = validateServerUrl(v);
+                  setState(() => _urlError = err == null ? null : (err == 'https_required' ? 'HTTPS is required' : 'Invalid URL'));
+                  if (err == null) _update((s) => s.copyWith(serverUrl: v.trim()));
+                },
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Consent to upload photos for analysis', style: TextStyle(fontSize: 18)),
+                value: st.serverConsent,
+                onChanged: (v) => _update((s) => s.copyWith(serverConsent: v)),
+              ),
+            ],
+          ]),
+          SectionCard(title: 'Saved sessions', icon: Icons.history_rounded, children: [
+            history.when(
+              data: (list) => list.isEmpty
+                  ? const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text('No completed sessions yet.'))
+                  : Column(children: [
+                      for (final h in list)
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text('${str.totalScannedLine(h.total)}${h.hasDemoScans ? '  [DEMO]' : ''}'),
+                          subtitle: Text('${str.neededLine(h.requiredAmount)} · ${str.remainingLine(h.payment)}'),
+                          trailing: IconButton(
+                            tooltip: 'Delete session',
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () async {
+                              await ref.read(sessionRepoProvider)?.delete(h.id);
+                              ref.invalidate(historyProvider);
+                            },
+                          ),
+                        ),
+                    ]),
+              loading: () => const SizedBox.shrink(),
+              error: (_, _) => const SizedBox.shrink(),
+            ),
+          ]),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              'Banknote Assistant counts cash only. It does not detect counterfeit notes, verify authenticity, '
+              'or process payments. Torn-ratio thresholds (Good ≤5%, Damaged ≤20%, Too torn >20%) are app settings, '
+              'not Bangladesh Bank rules.',
+              style: t.bodyMedium!.copyWith(color: AppColors.glassBorder),
+            ),
+          ),
+        ]),
+      ),
     );
   }
 }
-

@@ -16,6 +16,7 @@ import '../services/voice/command_parser.dart';
 import '../widgets/common.dart';
 import '../widgets/glass_panel.dart';
 import '../widgets/painters.dart';
+import '../widgets/ui_kit.dart';
 import '../widgets/waveform.dart';
 import 'voice_screen.dart';
 
@@ -36,6 +37,8 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with VoiceScreen,
   late final AnimationController _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..repeat(reverse: true);
   final _guidance = ValueNotifier<String>('place_note');
   final _ready = ValueNotifier<bool>(false);
+  final _stability = ValueNotifier<double>(0);
+  final _noteScreen = ValueNotifier<Rect?>(null);
   bool _busy = false;
   bool _torch = false;
   bool _streaming = false;
@@ -97,17 +100,26 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with VoiceScreen,
     } catch (_) {}
   }
 
-  /// Maps the on-screen bracket rectangle into normalised upright image
-  /// coordinates, accounting for the preview's cover-fit cropping.
-  NRect _guideInImage() {
-    final c = _cam!;
-    final ps = c.value.previewSize!;
+  /// Cover-fit transform between upright camera image and screen.
+  (double, double, double, double, double) _fit() {
+    final ps = _cam!.value.previewSize!;
     final iw = math.min(ps.width, ps.height), ih = math.max(ps.width, ps.height); // upright portrait
     final k = math.max(_screen.width / iw, _screen.height / ih);
-    final ox = (_screen.width - iw * k) / 2, oy = (_screen.height - ih * k) / 2;
+    return (iw, ih, k, (_screen.width - iw * k) / 2, (_screen.height - ih * k) / 2);
+  }
+
+  /// Maps the on-screen bracket rectangle into normalised image coordinates.
+  NRect _guideInImage() {
+    final (iw, ih, k, ox, oy) = _fit();
     double nx(double x) => ((x - ox) / (iw * k)).clamp(0.0, 1.0);
     double ny(double y) => ((y - oy) / (ih * k)).clamp(0.0, 1.0);
     return NRect(nx(_guideScreen.left), ny(_guideScreen.top), nx(_guideScreen.right), ny(_guideScreen.bottom));
+  }
+
+  /// Normalised image rectangle → screen rectangle (for the note outline).
+  Rect _imageToScreen(NRect r) {
+    final (iw, ih, k, ox, oy) = _fit();
+    return Rect.fromLTRB(ox + r.left * iw * k, oy + r.top * ih * k, ox + r.right * iw * k, oy + r.bottom * ih * k);
   }
 
   void _onFrame(CameraImage image) {
@@ -129,6 +141,10 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with VoiceScreen,
     final shouldCapture = _gate.onFrame(a) && autoCapture;
     _guidance.value = key;
     _ready.value = a.ready && _gate.armed;
+    // The ring only fills once the note is positioned (waiting to be steady / capturing).
+    final positioned = a.guidance == 'hold_steady' || a.guidance == 'capturing';
+    _stability.value = _gate.armed && positioned ? (a.ready ? 1.0 : a.stability) : 0;
+    _noteScreen.value = a.noteRect == null || !a.notePresent ? null : _imageToScreen(a.noteRect!);
     _maybeSpeakGuidance(key);
     if (shouldCapture) _capture();
   }
@@ -186,6 +202,11 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with VoiceScreen,
     context.go('/payment');
   }
 
+  void _manualCapture() {
+    _gate.rearm();
+    _capture(manual: true);
+  }
+
   @override
   void onVoice(String words) {
     switch (parseCommand(words)) {
@@ -194,8 +215,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with VoiceScreen,
       case VoiceCommand.total:
         say(s.totalSpeech(ref.read(sessionProvider).total));
       case VoiceCommand.scan || VoiceCommand.confirm:
-        _gate.rearm();
-        _capture(manual: true);
+        _manualCapture();
       case VoiceCommand.undo:
         final removed = ref.read(sessionProvider.notifier).undo();
         say(s.undoSpeech(removed, ref.read(sessionProvider).total));
@@ -233,6 +253,8 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with VoiceScreen,
     _pulse.dispose();
     _guidance.dispose();
     _ready.dispose();
+    _stability.dispose();
+    _noteScreen.dispose();
     super.dispose();
   }
 
@@ -240,13 +262,14 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with VoiceScreen,
   Widget build(BuildContext context) {
     final str = ref.watch(stringsProvider);
     final isDemo = ref.watch(settingsProvider.select((x) => x.mode == EngineMode.demo));
+    final session = ref.watch(sessionProvider);
     final t = Theme.of(context).textTheme;
     return Scaffold(
       backgroundColor: Colors.black,
       body: LayoutBuilder(builder: (context, box) {
         _screen = box.biggest;
         final w = box.maxWidth, h = box.maxHeight;
-        _guideScreen = Rect.fromLTWH(w * 0.12, h * 0.30, w * 0.76, math.min(h * 0.34, w * 0.76 * 0.95));
+        _guideScreen = Rect.fromLTWH(w * 0.1, h * 0.28, w * 0.8, math.min(h * 0.32, w * 0.8 * 0.9));
         final cam = _cam;
         return Stack(fit: StackFit.expand, children: [
           // Full-screen live preview (cover fit).
@@ -270,84 +293,113 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with VoiceScreen,
               padding: const EdgeInsets.all(24),
               child: Text(_cameraError == null ? '...' : str.cameraPermissionDenied, textAlign: TextAlign.center, style: t.bodyLarge),
             )),
-          // Yellow animated brackets.
+          // Dim everything outside the scan frame so the target area stands out.
+          IgnorePointer(child: ExcludeSemantics(child: CustomPaint(painter: _ScrimPainter(_guideScreen)))),
+          // Outline of the note the analyser currently sees.
+          ValueListenableBuilder<Rect?>(
+            valueListenable: _noteScreen,
+            builder: (_, r, _) => r == null
+                ? const SizedBox.shrink()
+                : IgnorePointer(child: ExcludeSemantics(child: CustomPaint(painter: _NoteOutlinePainter(r, _ready.value)))),
+          ),
+          // Yellow animated brackets (green when ready).
           ValueListenableBuilder<bool>(
             valueListenable: _ready,
-            builder: (_, ready, _) => ExcludeSemantics(
-              child: CustomPaint(painter: ScanBracketsPainter(rect: _guideScreen, pulse: _pulse, locked: ready)),
+            builder: (_, ready, _) => IgnorePointer(
+              child: ExcludeSemantics(child: CustomPaint(painter: ScanBracketsPainter(rect: _guideScreen, pulse: _pulse, locked: ready))),
             ),
           ),
           SafeArea(
             child: Column(children: [
               if (isDemo) DemoBanner(text: str.demoBanner),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
+              // Running total, always visible while scanning.
+              Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 16),
+                  child: TotalChip(total: session.total, count: session.accepted.length, label: str.totalLabel, notesLabel: str.notesLabel, shortNotesLabel: str.notesShort),
+                ),
+              ),
+              const SizedBox(height: 10),
               // Voice guidance pill (live region).
               Padding(
-                padding: EdgeInsets.symmetric(horizontal: w * 0.12),
+                padding: EdgeInsets.symmetric(horizontal: w * 0.08),
                 child: ValueListenableBuilder<String>(
                   valueListenable: _guidance,
                   builder: (_, key, _) => Semantics(
                     liveRegion: true,
                     label: str.guidance(key),
                     excludeSemantics: true,
-                    child: Container(
-                      constraints: const BoxConstraints(minHeight: 76),
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: const Color(0x66000000),
-                        borderRadius: BorderRadius.circular(50),
-                        border: Border.all(color: const Color(0xFFB7C9D3), width: 5),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 250),
+                      child: Container(
+                        key: ValueKey(key),
+                        constraints: const BoxConstraints(minHeight: 72),
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xA6071529),
+                          borderRadius: BorderRadius.circular(50),
+                          border: Border.all(color: const Color(0xFFB7C9D3), width: 4),
+                        ),
+                        child: Row(children: [
+                          const Icon(Icons.volume_up_rounded, size: 42, color: AppColors.white),
+                          const SizedBox(width: 12),
+                          Expanded(child: Text(str.guidance(key), style: t.bodyLarge!.copyWith(fontWeight: FontWeight.w700))),
+                        ]),
                       ),
-                      child: Row(children: [
-                        const Icon(Icons.volume_up_rounded, size: 46, color: AppColors.white),
-                        const SizedBox(width: 10),
-                        Expanded(child: Text(str.guidance(key), style: t.bodyLarge!.copyWith(fontWeight: FontWeight.w700))),
-                      ]),
                     ),
                   ),
                 ),
               ),
               const Spacer(),
-              // Bottom glass status panel.
+              // Compact glass status panel.
               Padding(
-                padding: EdgeInsets.symmetric(horizontal: w * 0.1),
+                padding: EdgeInsets.symmetric(horizontal: w * 0.08),
                 child: ValueListenableBuilder<bool>(
                   valueListenable: _ready,
                   builder: (_, ready, _) => GlassPanel(
-                    radius: 50,
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                    radius: 40,
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
                     child: Column(children: [
-                      Waveform(level: voice.soundLevel, width: w * 0.55, height: 64),
+                      Waveform(level: voice.soundLevel, width: w * 0.5, height: 44),
                       Semantics(
                         liveRegion: true,
-                        child: Text(ready ? str.capturing : str.searching, style: t.headlineMedium!.copyWith(fontSize: w * 0.08)),
+                        child: Text(ready ? str.capturing : str.searching, style: t.headlineMedium!.copyWith(fontSize: w * 0.07)),
                       ),
-                      Text(str.holdSteady, style: t.bodyLarge),
+                      Text(str.holdSteady, style: t.bodyMedium),
                     ]),
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-              // Manual alternatives: flashlight, capture, finish.
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Row(children: [
-                  Expanded(child: BigActionButton(label: _torch ? str.flashOff : str.flashOn, shortLabel: str.torch, icon: _torch ? Icons.flashlight_off : Icons.flashlight_on, onPressed: _toggleTorch)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                      child: BigActionButton(
-                          label: str.captureNow,
-                          shortLabel: str.capture,
-                          icon: Icons.camera_alt_rounded,
-                          color: AppColors.scanYellow,
-                          onPressed: () {
-                            _gate.rearm();
-                            _capture(manual: true);
-                          })),
-                  const SizedBox(width: 8),
-                  Expanded(child: BigActionButton(label: str.finish, icon: Icons.check_rounded, color: AppColors.successGreen, onPressed: _finish)),
-                ]),
-              ),
+              const SizedBox(height: 14),
+              // Camera-style controls: torch · capture (steadiness ring) · finish.
+              Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, crossAxisAlignment: CrossAxisAlignment.end, children: [
+                RoundAction(
+                  icon: _torch ? Icons.flashlight_off_rounded : Icons.flashlight_on_rounded,
+                  label: str.torch,
+                  semanticLabel: _torch ? str.flashOff : str.flashOn,
+                  onPressed: _toggleTorch,
+                  color: _torch ? AppColors.scanYellow : AppColors.glassBorder,
+                ),
+                RoundAction(
+                  icon: Icons.camera_alt_rounded,
+                  label: str.capture,
+                  semanticLabel: str.captureNow,
+                  size: 84,
+                  filled: true,
+                  color: AppColors.scanYellow,
+                  progress: _stability,
+                  onPressed: _manualCapture,
+                ),
+                RoundAction(
+                  icon: Icons.check_rounded,
+                  label: str.finish,
+                  semanticLabel: str.finish,
+                  onPressed: _finish,
+                  color: AppColors.successGreen,
+                ),
+              ]),
               const SizedBox(height: 12),
             ]),
           ),
@@ -355,4 +407,43 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with VoiceScreen,
       }),
     );
   }
+}
+
+/// Darkens the preview outside the scan frame.
+class _ScrimPainter extends CustomPainter {
+  _ScrimPainter(this.hole);
+  final Rect hole;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRect(Offset.zero & size)
+      ..addRRect(RRect.fromRectAndRadius(hole, const Radius.circular(36)));
+    canvas.drawPath(path, Paint()..color = const Color(0x66000000));
+  }
+
+  @override
+  bool shouldRepaint(_ScrimPainter old) => old.hole != hole;
+}
+
+/// Thin outline around the detected note (cyan; green when ready).
+class _NoteOutlinePainter extends CustomPainter {
+  _NoteOutlinePainter(this.rect, this.ready);
+  final Rect rect;
+  final bool ready;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(10)),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3
+        ..color = (ready ? AppColors.successGreen : AppColors.cyan).withValues(alpha: 0.9),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_NoteOutlinePainter old) => old.rect != rect || old.ready != ready;
 }

@@ -9,6 +9,7 @@ import '../services/voice/command_parser.dart';
 import '../widgets/common.dart';
 import '../widgets/glass_panel.dart';
 import '../widgets/painters.dart';
+import '../widgets/ui_kit.dart';
 import '../widgets/waveform.dart';
 import 'scanner_screen.dart';
 import 'voice_screen.dart';
@@ -88,7 +89,8 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with VoiceScree
     final progress = flow.stages.isEmpty ? 0.0 : done / StageName.values.length;
 
     return Scaffold(
-      body: SafeArea(
+      body: AppBackground(
+        child: SafeArea(
         child: LayoutBuilder(builder: (context, c) {
           final w = c.maxWidth;
           return SingleChildScrollView(
@@ -131,6 +133,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> with VoiceScree
             ]),
           );
         }),
+        ),
       ),
     );
   }
@@ -153,16 +156,30 @@ class _StageRow extends StatelessWidget {
       StageStatus.pending => Container(
           width: 44, height: 44, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.neutralGrey, width: 2))),
     };
+    final t = Theme.of(context).textTheme;
+    // Real output of the stage (e.g. "acceptable", "2.0%", "20 BDT"), shown once it finished.
+    final finished = update.status != StageStatus.pending && update.status != StageStatus.running;
+    final detail = finished ? update.detail.replaceAll('_', ' ') : '';
+    final active = update.status != StageStatus.pending;
     return Semantics(
-      label: '$label: ${statusText(update.status)}',
+      label: '$label: ${statusText(update.status)}${detail.isEmpty ? '' : ', $detail'}',
       excludeSemantics: true,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(children: [
-          icon,
-          const SizedBox(width: 22),
-          Expanded(child: Text(label, style: Theme.of(context).textTheme.bodyLarge!.copyWith(fontSize: 24))),
-        ]),
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 250),
+        opacity: active ? 1 : 0.55,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(children: [
+            icon,
+            const SizedBox(width: 20),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(label, style: t.bodyLarge!.copyWith(fontSize: 24)),
+                if (detail.isNotEmpty) Text(detail, style: t.bodyMedium!.copyWith(color: const Color(0xFFB8C8D8))),
+              ]),
+            ),
+          ]),
+        ),
       ),
     );
   }

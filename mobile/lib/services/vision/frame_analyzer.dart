@@ -34,6 +34,7 @@ class FrameAnalysis {
     this.brightness = 0,
     this.sharpness = 0,
     this.multiple = false,
+    this.stability = 0,
   });
 
   /// Guidance key (see S.guidance), e.g. 'move_left', 'hold_steady'.
@@ -46,6 +47,9 @@ class FrameAnalysis {
   final double brightness;
   final double sharpness;
   final bool multiple;
+
+  /// 0..1 — how close the note is to being steady enough to capture.
+  final double stability;
 }
 
 /// Analyses low-resolution luminance to guide the user and decide when to
@@ -208,8 +212,16 @@ class FrameAnalyzer {
       ready = false;
       key = 'hold_steady';
     }
+    final stability = rect == null ? 0.0 : (_stableCount / stableFramesNeeded).clamp(0.0, 1.0);
     return FrameAnalysis(
-      guidance: key, notePresent: big.isNotEmpty, ready: ready, noteRect: rect, brightness: brightness, sharpness: sharp, multiple: multiple);
+        guidance: key,
+        notePresent: big.isNotEmpty,
+        ready: ready,
+        noteRect: rect,
+        brightness: brightness,
+        sharpness: sharp,
+        multiple: multiple,
+        stability: stability);
   }
 
   double _gridDiff(Float32List g) {
